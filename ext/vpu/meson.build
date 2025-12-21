@@ -17,12 +17,13 @@ source = [
 	'gstimxvpudecbufferpool.c',
 	'gstimxvpudec.c',
 	'gstimxvpudeccontext.c',
-	'gstimxvpuenc.c',
-	'gstimxvpuench263.c',
-	'gstimxvpuench264.c',
-	'gstimxvpuencjpeg.c',
-	'gstimxvpuencmpeg4.c',
-	'gstimxvpuencvp8.c',
+        'gstimxvpuenc.c',
+        'gstimxvpuench263.c',
+        'gstimxvpuench264.c',
+        'gstimxvpuench265.c',
+        'gstimxvpuencjpeg.c',
+        'gstimxvpuencmpeg4.c',
+        'gstimxvpuencvp8.c',
 	'plugin.c'
 ]
 
