@@ -74,6 +74,7 @@ gboolean gst_imx_vpu_enc_h265_set_open_params(GstImxVpuEnc *imx_vpu_enc, ImxVpuA
         GstStructure *s;
         gchar const *str;
         GstCaps *allowed_srccaps;
+        ImxVpuApiH265SupportDetails const *h265_support_details;
         ImxVpuApiEncH265OpenParams *h265_params = &(open_params->format_specific_open_params.h265_open_params);
 
         allowed_srccaps = gst_pad_get_allowed_caps(GST_VIDEO_DECODER_SRC_PAD(imx_vpu_enc));
@@ -108,6 +109,8 @@ gboolean gst_imx_vpu_enc_h265_set_open_params(GstImxVpuEnc *imx_vpu_enc, ImxVpuA
                 }
         }
 
+        h265_support_details = (ImxVpuApiH265SupportDetails const *)imx_vpu_api_enc_get_compression_format_support_details(IMX_VPU_API_COMPRESSION_FORMAT_H265);
+
         str = gst_imx_vpu_get_string_from_structure_field(s, "level");
         if (str != NULL)
         {
@@ -130,6 +133,24 @@ gboolean gst_imx_vpu_enc_h265_set_open_params(GstImxVpuEnc *imx_vpu_enc, ImxVpuA
                         ret = FALSE;
                         goto finish;
                 }
+        }
+        else if (h265_support_details != NULL)
+        {
+                ImxVpuApiH265Level default_level;
+
+                /*
+                 * If no level was negotiated, fall back to the maximum level
+                 * supported for the selected profile. Without this, the encoder
+                 * reports an unknown/unsupported level and refuses to start.
+                 */
+                default_level = (h265_params->profile == IMX_VPU_API_H265_PROFILE_MAIN10)
+                        ? h265_support_details->max_main10_profile_level
+                        : h265_support_details->max_main_profile_level;
+
+                if (default_level != IMX_VPU_API_H265_LEVEL_UNDEFINED)
+                        h265_params->level = default_level;
+                else
+                        GST_WARNING_OBJECT(imx_vpu_enc, "h.265 level not negotiated and no supported level reported; keeping default");
         }
 
 finish:
