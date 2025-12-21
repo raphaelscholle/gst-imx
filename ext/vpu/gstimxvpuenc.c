@@ -465,14 +465,18 @@ static gboolean gst_imx_vpu_enc_set_format(GstVideoEncoder *encoder, GstVideoCod
 	open_params->frame_rate_denominator = GST_VIDEO_INFO_FPS_D(&(state->info));
 
 	GST_OBJECT_LOCK(imx_vpu_enc);
-	open_params->bitrate = imx_vpu_enc->bitrate;
-	open_params->gop_size = imx_vpu_enc->gop_size;
-	open_params->closed_gop_interval = imx_vpu_enc->closed_gop_interval;
-	open_params->quantization = imx_vpu_enc->quantization;
-	open_params->min_intra_refresh_mb_count = imx_vpu_enc->intra_refresh;
-	open_params->fixed_intra_quantization = imx_vpu_enc->fixed_intra_quantization;
-	open_params->flags = (imx_vpu_enc->allow_frameskipping ? IMX_VPU_API_ENC_OPEN_PARAMS_FLAG_ALLOW_FRAMESKIPPING : 0)
-	                   | (imx_vpu_enc->use_intra_refresh ? IMX_VPU_API_ENC_OPEN_PARAMS_FLAG_USE_INTRA_REFRESH : 0);
+        open_params->bitrate = imx_vpu_enc->bitrate;
+        open_params->gop_size = imx_vpu_enc->gop_size;
+        open_params->closed_gop_interval = imx_vpu_enc->closed_gop_interval;
+        open_params->quantization = imx_vpu_enc->quantization;
+        open_params->min_intra_refresh_mb_count = imx_vpu_enc->intra_refresh;
+#ifdef IMX_VPU_API_ENC_OPEN_PARAMS_FIXED_INTRA_QUANTIZATION
+        open_params->fixed_intra_quantization = imx_vpu_enc->fixed_intra_quantization;
+#endif
+#if defined(IMX_VPU_API_ENC_OPEN_PARAMS_FLAG_ALLOW_FRAMESKIPPING) || defined(IMX_VPU_API_ENC_OPEN_PARAMS_FLAG_USE_INTRA_REFRESH)
+        open_params->flags = (imx_vpu_enc->allow_frameskipping ? IMX_VPU_API_ENC_OPEN_PARAMS_FLAG_ALLOW_FRAMESKIPPING : 0)
+                           | (imx_vpu_enc->use_intra_refresh ? IMX_VPU_API_ENC_OPEN_PARAMS_FLAG_USE_INTRA_REFRESH : 0);
+#endif
 	GST_OBJECT_UNLOCK(imx_vpu_enc);
 
 	GST_DEBUG_OBJECT(encoder, "setting bitrate to %u kbps and GOP size to %u", open_params->bitrate, open_params->gop_size);
@@ -875,7 +879,12 @@ static GstFlowReturn gst_imx_vpu_enc_encode_queued_frames(GstImxVpuEnc *imx_vpu_
 				encoded_frame.data = map_info.data;
 				encoded_frame.data_size = encoded_frame_size;
 
-				enc_ret = imx_vpu_api_enc_get_encoded_frame_ext(imx_vpu_enc->encoder, &encoded_frame, &is_sync_point);
+#ifdef IMX_VPU_API_ENC_OUTPUT_CODE_FRAME_SKIPPED
+                                enc_ret = imx_vpu_api_enc_get_encoded_frame_ext(imx_vpu_enc->encoder, &encoded_frame, &is_sync_point);
+#else
+                                enc_ret = imx_vpu_api_enc_get_encoded_frame(imx_vpu_enc->encoder, &encoded_frame);
+                                is_sync_point = (encoded_frame.frame_type == IMX_VPU_API_FRAME_TYPE_IDR) || (encoded_frame.frame_type == IMX_VPU_API_FRAME_TYPE_I);
+#endif
 
 				gst_buffer_unmap(output_buffer, &map_info);
 
@@ -906,36 +915,38 @@ static GstFlowReturn gst_imx_vpu_enc_encode_queued_frames(GstImxVpuEnc *imx_vpu_
 				break;
 			}
 
-			case IMX_VPU_API_ENC_OUTPUT_CODE_FRAME_SKIPPED:
-			{
-				guint32 system_frame_number;
-				void *skipped_frame_context;
-				uint64_t skipped_frame_pts, skipped_frame_dts;
-				GstVideoCodecFrame *out_frame;
+#ifdef IMX_VPU_API_ENC_OUTPUT_CODE_FRAME_SKIPPED
+                        case IMX_VPU_API_ENC_OUTPUT_CODE_FRAME_SKIPPED:
+                        {
+                                guint32 system_frame_number;
+                                void *skipped_frame_context;
+                                uint64_t skipped_frame_pts, skipped_frame_dts;
+                                GstVideoCodecFrame *out_frame;
 
-				enc_ret = imx_vpu_api_enc_get_skipped_frame_info(imx_vpu_enc->encoder, &skipped_frame_context, &skipped_frame_pts, &skipped_frame_dts);
-				g_assert(enc_ret == IMX_VPU_API_ENC_RETURN_CODE_OK);
+                                enc_ret = imx_vpu_api_enc_get_skipped_frame_info(imx_vpu_enc->encoder, &skipped_frame_context, &skipped_frame_pts, &skipped_frame_dts);
+                                g_assert(enc_ret == IMX_VPU_API_ENC_RETURN_CODE_OK);
 
-				system_frame_number = (guint32)((guintptr)skipped_frame_context);
-				out_frame = gst_video_encoder_get_frame(encoder, system_frame_number);
-				if (G_UNLIKELY(out_frame == NULL))
-				{
-					GST_WARNING_OBJECT(imx_vpu_enc, "no gstframe exists with number #%" G_GUINT32_FORMAT " - ignoring skipped frame", system_frame_number);
-					goto finish;
-				}
+                                system_frame_number = (guint32)((guintptr)skipped_frame_context);
+                                out_frame = gst_video_encoder_get_frame(encoder, system_frame_number);
+                                if (G_UNLIKELY(out_frame == NULL))
+                                {
+                                        GST_WARNING_OBJECT(imx_vpu_enc, "no gstframe exists with number #%" G_GUINT32_FORMAT " - ignoring skipped frame", system_frame_number);
+                                        goto finish;
+                                }
 
-				GST_DEBUG_OBJECT(imx_vpu_enc, "encoder skipped gstframe with number #%" G_GUINT32_FORMAT, system_frame_number);
+                                GST_DEBUG_OBJECT(imx_vpu_enc, "encoder skipped gstframe with number #%" G_GUINT32_FORMAT, system_frame_number);
 
-				/* Let gst_video_encoder_finish_frame() know that this frame was skipped/dropped
-				 * by ensuring that the out_frame->output_buffer field is set to NULL. */
-				out_frame->output_buffer = NULL;
+                                /* Let gst_video_encoder_finish_frame() know that this frame was skipped/dropped
+                                 * by ensuring that the out_frame->output_buffer field is set to NULL. */
+                                out_frame->output_buffer = NULL;
 
-				flow_ret = gst_video_encoder_finish_frame(encoder, out_frame);
+                                flow_ret = gst_video_encoder_finish_frame(encoder, out_frame);
 
-				g_hash_table_remove(imx_vpu_enc->uploaded_buffers_table, (gpointer)(gintptr)system_frame_number);
+                                g_hash_table_remove(imx_vpu_enc->uploaded_buffers_table, (gpointer)(gintptr)system_frame_number);
 
-				break;
-			}
+                                break;
+                        }
+#endif
 
 			case IMX_VPU_API_ENC_OUTPUT_CODE_MORE_INPUT_DATA_NEEDED:
 				GST_LOG_OBJECT(imx_vpu_enc, "VPU has no more data to encode");
