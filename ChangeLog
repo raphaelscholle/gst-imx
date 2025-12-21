@@ -1,0 +1,716 @@
+==== version 2.2.0 (2023-07-30) ===
+
+* imx2d:
+  * Add 10-bit tiled NV12/21 formats and extend Imx2dPixelFormatInfo
+  * Fix corner case when imx2d format has no GStreamer counterpart
+    In such a case, no GStreamer format string exists, so format_str stays
+    NULL, and the format_string_gvalue is not taken into the format_list_gvalue
+    array. Unset it to prevent followup g_value_init() calls from failing.
+  * Replace num_first_plane_bpp with pixel_stride
+    pixel_stride is more useful and more intuitive in calculations,
+    and works properly with tiled 10-bit formats.
+  * Fix flickering when using DPU-emulated G2D rendering
+  * Free surface during destroy
+  * Add support for specifying colorimetry
+  * Take into account chroma subsampling in alignments
+  * Add special format specific stride alignment specifier
+  * Add overlay composition support to imx2d video sinks
+  * ipu: Add support for YUY2 (aka YUYV)
+  * ipu: Add video sink
+    Even though the IPU isn't actually flexible enough for use in a video
+    sink, it can be useful for diagnostics and debugging, so add one.
+  * g2d: Don't restrict calls to one thread if G2D is new enough
+  * g2d: Check if Amphion tile enums are present
+  * g2d: Enable YVYU and NV61 when using G2D newer than 1.x
+  * g2d: Check for colorimetry support
+
+* vpu:
+  * Raise minimum required libimxvpuapi version to 2.3.0
+    A number of API additions and critical bug fixes in libimxvpuapi
+    make it essential to raise the minimum required version.
+  * Fix case when a gap event arrives before the caps event does
+  * Fix gst_imx_vpu_dec_drain() return type
+  * Free element_name after registering
+  * encoder: Add closed-gop-interval property
+  * encoder: Handle force-keyframe-headers flag and add sync points
+  * encoder: Fix h264/h265 AUD handling and add enable-aud property
+    AUDs are not enabled by "au" caps. "au" instead means that buffers
+    contain entire access units, which is what all imx6 and imx8 VPUs produce.
+    Fix this by always setting "au" in the output caps and adding an
+    "enable-aud" GObject property.
+  * decoder: Add support for producing 4x4 tiled frames
+    The 4x4 tile format is available with Hantro VPUs. Especially when using
+    formats that are produced by the G2 VPU, using tiled formats can yield
+    significant performance improvements, because the VPU does not have to
+    perform internal detiling before handing over the decoded frame to the
+    caller. The 4x4 tile format corresponds to the GStreamer NV12_4L4 format.
+    If GStreamer is older than 1.18, this is disabled, sinceNV12_4L4 was
+    introduced in 1.18.0.
+  * decoder: When draining before setting format, don't treat EOS as error
+
+* v4l2video:
+  * Add ISI transform and Amphion decoder elements
+    These are meant for older imx-kernels (<5.15) that have broken drivers
+    for V4L2 mem2mem ISI and Amphion decoder devices. These custom elements
+    use workarounds to address the issues these drivers have. Newer kernels
+    use different drivers that aren't broken, so the custom elements are
+    not needed there.
+  * v4l2videosrc: Minor logging fixes
+  * v4l2videosrc: Support non-mxc_v4l2 devices (like USB cameras)
+    This enables support for devices that aren't based on the mxc_v4l2 driver.
+    Useful for being able to use the same imxv4l2videosrc element with both
+    MIPI/CSI and USB cameras.
+  * v4l2videosrc: Read back format with G_FMT after having set it with S_FMT
+    Usually, the driver should set any changes in the parameters right in the
+    S_FMT call, but some don't (they return defaults instead), so to
+    be safe, actually issue the G_FMT ioctl instead.
+  * v4l2videosrc: Copy bytesperline and sizeimage into videoinfo struct
+    This is important if the driver picked a different format, since then,
+    the originally chosen sizes and the new ones can differ significantly.
+  * v4l2videosrc: Unref old v4l2 object before creating new one
+    This fixes cases where a caps renegotiation happens and the old object
+    still keeps the V4L2 device open, preventing some of the new object's
+    ioctls from succeeding.
+  * Added ov5645 mipi camera
+  * v4l2videosrc: Check for V4L2_CAP_SDR_OUTPUT and V4L2_CAP_TOUCH presence
+  * v4l2videosrc: Don't exit with error if mxc_v4l2 chip ID is not available
+  * Add prelude header
+    This fixes build errors due to undeclared symbols
+  * v4l2videosrc: Don't use V4L2 sizeimage for single-planar pixel formats
+  * Explicitly calculate plane stride and offset values
+  * Remove pixel-aspect-ratio from probed device caps
+    These unfixated template caps can mislead downstream fixation logic,
+    leading to it using a PAR of 1/maxint, which in turn causes integer
+    overflow errors. Elements do not normally specify that kind of
+    pixel aspect ratio range, and just omit it from the template caps.
+  * Use sys/time.h instead of time.h
+
+* imx-gst-libs:
+  * common: Fix incorrect imx_dma_buffer_deallocate() calls
+    If the gst_imx_dmabuf_allocator_activate() call inside alloc() fails,
+    imx_dma_buffer_deallocate() would be called even though no imxdmabuffer
+    was allocated. Fix this by adding an imx_dma_buffer check.
+  * common: Add gst_imx_dmabuf_allocator_get_physical_address()
+  * common: Misc GstImxDmaBufAllocator improvements
+  * common: Fix gst_imx_dmabuf_allocator_wrap_dmabuf() call
+    This function tries to get a physical address before activating the
+    allocator. Switch this around to make this call work with allocators
+    like the ION allocator.
+  * common: Replace dup() with memory ref'ing in dmabuf uploader
+    Using dup() was causing an FD leak because the dup'ed FD was not being
+    closed correctly. But also, just using dup() risks data races because
+    producers can still write to the same dma-buf memory that consumers are
+    processing. Instead, ref the input dmabuf gstmemory to let the rest of
+    the pipeline know that the gstmemory is in use.
+  * common: Remove volatile qualifier in allocator GType
+    This addresses the warning:
+    warning: argument 2 of ‘__atomic_load’ discards ‘volatile’ qualifier
+  * common: Fix assertion in raw_buffer_upload_method_create()
+  * common: Synchronize imx gstmemory access with mutexes
+  * video: Move GstImx2dVideoBufferPool to video/
+    GstImx2dVideoBufferPool is not actually imx2d specific, and can be reused
+    in other plugins. Move it to gst-libs/gst/imx/video/ for that purpose.
+  * video: Add functions to videobufferpool for getting info
+  * video: Add GstImxVideoDmaBufferPool
+  * video: Set videometa plane stride & offset values in pool
+  * video: Take into account chroma subsampling in alignments
+  * video: Adjust video meta before doing a CPU based frame copy
+  * video: Fix video dma buffer pool info size modifications
+  * video: Add function for setting new video uploader alignments
+
+==== version 2.1.0 (2022-05-10) ===
+
+* meson:
+  * New sysroot option in case the external sysroot property is unusable
+    Normally, this option should not be needed. However, with some BSPs
+    whose sysroot properties are broken, having this option is useful.
+  * Reduce minimum required Meson version from 0.54.0 to 0.53.2
+    This is mainly introduced for Yocto Dunfell support.
+    (Meson <0.54 requires the new sysroot property though.)
+  * Cleanup deprecated code
+
+* imx2d: UYVY and YUYV formats are supported by G2D if it is emulated on
+  top of the DPU (found in i.MX8 QuadMax and i.MX8 QuadXPlus SocS).
+
+* vpu:
+  * Correctly handle case when a stream buffer is not needed
+  * Disable frame reordering if it is not needed
+  * imxvpudec_h264 needs au alignment to guarantee complete frames
+  * Unlock decoder_context on fatal error while decoding
+
+* v4l2video:
+  * v4l2videosrc: Skip allocation pools with NULL buffer pool
+    Prevents assertions like:
+    gst_buffer_pool_has_option: assertion 'GST_IS_BUFFER_POOL (pool)' failed
+    See: https://github.com/Freescale/gstreamer-imx/issues/304
+  * v4l2videosrc: Skip allocation params with NULL allocator
+    Prevents assertions like:
+    gst_object_unref: assertion 'object != NULL' failed
+    See: https://github.com/Freescale/gstreamer-imx/issues/304
+  * v4l2videosrc: Use correct ioctl for frame intervals
+  * Minor logging fixes
+
+* imx-gst-libs:
+  * common: Add GST_MAP_FLAG_IMX_MANUAL_SYNC
+  * common: Add dma-heap allocator and GstImxDmaBufAllocator
+    dma-heap is the replacement for the ION allocator, which
+    is phased out in newer Linux kernels.
+    GstImxDmaBufAllocator (not to be confused with
+    GstImxDmaBufferAllocator) is a base class for allocators
+    that produce DMA-BUF memory. That base class delegates
+    (un)mapping to imxdmabuffer map/unmap functions.
+  * common: Fix logging in raw_buffer_upload_method_perform()
+  * video: Copy input video meta to output buffer if necessary
+    See: https://github.com/Freescale/gstreamer-imx/issues/303
+
+==== version 2.0.0 (2021-04-25) ===
+
+* Complete rewrite based on GStreamer 1.14, libimxvpuapi 2.1.2,
+  and the new libimxdmabuffer library. This new rewrite is referred to
+  as "v2" (version 2), while the old code is referred to as "v1"
+  (version 1). v1 is no longer being developed; work is focused on v2.
+
+* Code reorganized to match the directory structure of GStreamer.
+  gst-libs/ contains common library code. ext/ contains element
+  code that has additional external dependencies (libimxvpuapi etc).
+  sys/ contains element code that access system dependencies such
+  as Video4Linux2 headers.
+
+* DMA memory allocation is now done via the GstImxDmaBufferAllocator
+  GObject interface is present in the gstimxcommon library. Implementations
+  of this interface use libimxdmabuffer. These allocators also implement
+  the GstPhysMemoryAllocator interface to allow for easier interfacing
+  with other GStreamer code that uses physical addresses. In addition, one
+  of the allocator classes is based on the ION allocator and is based on
+  the GstDmaBufAllocator class. This is the preferred allocator in the
+  gstimxcommon library. If ION is available, this one is used, automatically
+  providing GstMemory blocks that are compatible with the gst_dmabuf_memory
+  and gst_phys_memory APIs. This completely replaces GstImxPhysMemMeta,
+  GstImxPhysMemory, GstImxPhysMemAllocator, and GstImxPhysMemBufferPool
+  from v1.
+
+* Switched to the meson build system for better integration with
+  GStreamer build setups such as Cerbero.
+
+* vpu: New elements based on libimxvpuapi v2.
+  * Support for the Hantro codec on i.MX8m and i.8MX8m Mini SoCs.
+  * Supported formats: h.264, h.265, VP8, VP9, MPEG-2, MPEG-4, VC-1,
+    WMV3, WebP, JPEG, h.263, VP6, VP7, AVS, DivX 3/4/5, Sorenson Spark.
+    (Which ones of these are enabled depends on the SoC and how libimxvpuapi2
+    was configured at build time.)
+  * There is no single `imxvpudec` element anymore. Instead, decoder elements
+    are autogenerated for each format that the VPU can decode. Example:
+    `imxvpudec_h264`, `imxvpudec_vp8` etc.
+  * "num-additional-framebuffers" property no longer exists, since libimxvpuapi
+    v2 now allows for dynamic DMA memory buffer pools. This removes a potential
+    source of freezes when the fixed-size libimxvpuapi v1 buffer pools had
+    no free buffers anymore.
+  * Decoder elements support RGB and 10-bit YUV output and tiled formats.
+  * h.265 colorimetry information is exported via the decoder's output state.
+
+* 2D blitter elements:
+  * 2D blitter code uses an internal library called "imx2d", which may
+    be extracted as its own actual library in the future.
+  * video transform elements support GstVideoOverlayComposition data,
+    making the g2dpango element unnecessary.
+  * All rotations / flipping options are based on the GstVideoOrientation
+    enum and implement the GstVideoDirection interface. Also, they support
+    automatic image orientations based on GST_TAG_IMAGE_ORIENTATION.
+  * G2D blitter code has extra support for Amphion malone VPU's tiled frames.
+  * IPU blitter code has a tiling mechanism when rendering to handle resolutions
+    that can't be processed in one go by the IPU driver.
+  * Video frames that don't have stride / plane offset values that are aligned
+    in a manner suitable for the blitter are uploaded into internal DMA memory
+    automatically. While this reduces performance (since these copies are
+    done with the CPU), the alternative would be to not be able to handle
+    these frames at all. Similarly, if video frames come in non-DMA memory,
+    elements automatically upload those into DMA memory (since the blitters
+    requrire DMA access).
+
+* Entirely new Video4Linux element for i.MX6 machines. i.MX8 SoCs use a
+  newer driver that outputs DMA-BUF buffers and is fully usable via the
+  default GStreamer `v4l2src` element. However, the older `mxc_v4l2` driver
+  for the i.MX6 still needs custom ioctl calls and has serious bugs that
+  require various workarounds. The new `imxv4l2videosrc` element contains
+  these workarounds. Compared to the element from gstreamer-imx v1, this
+  one has better buffer pool handling (there no longer is a fixed-size
+  buffer pool) and does not need the "num-additional-buffers" property.
+  Furthermore, framerate and resolution are derived from the downstream
+  caps, so the "framerate-num", "framerate-den", "input", "capture-mode"
+  properties are not needed anymore.
+
+==== version 0.13.0 (2017-11-01) ====
+
+* New imxv4l2videosink element
+  Currently only supports input physically contiguous memory blocks
+  as input (so, for example, no videotestsrc)
+
+* New Pango-based overlay elements using G2D for rendering
+
+* gstimxcommon library is now public
+  Necessary when implementing external sinks to retrieve the mapped
+  physical memory address from gstreamer buffers
+  (NOTE: ABI may change in the next few releases until this is stabilized)
+
+* New optional ability to use GstPhysMemory from gst-plugins-bad
+
+* imxv4l2videosrc:
+  * Fix compile prior to Gstreamer 1.3.1
+  * v4l2_buffer_pool: Add special case for tw6869 driver
+    The tw6869 driver requires a different physical address to allow
+    DMA'able buffers for decreasing latency between chip and display
+  * v4l2src: add fractional "fps" property
+    (obsoletes the "fps-n" property)
+  * Add GstImxV4l2Meta init function
+    This avoids the g_assert() that was caused by the missing init
+    function
+  * Add num-additional-buffers property
+    This can be useful if capturing video isn't smooth; it sets the
+    number of internal additional buffers, so if downstream consumes
+    too many buffers, imxv4l2videosrc might end up doing a blocking
+    wait until buffers are returned
+
+* imxv4l2src plugin is now called imxv4l2video, because it also
+  contains imxv4l2videosink
+  Also, the v4l2 elements can be enabled/disabled in the build
+  configuration individually now
+
+* compositor:
+  * Only copy compositor input buffers to DMA memory once
+    If a single input frame is used for multiple output frames, we would
+    otherwise copy multiple times which can easily go to the limit of the
+    memory bandwidth
+
+* vpu:
+  * Handle releasing of buffers without assigned framebuffer
+    This can happen if the buffer is released before it was actually
+    used, e.g. when renegotiating at the very beginning; prevents
+    a crash that would otherwise occur
+  * Add parameter check to avoid encoder crash on flush
+
+* g2d:
+  * Add build configuration switches to explicitely specify G2D include
+    and library paths
+  * Disable cacheable memory allocation
+    Several issues were reported with cacheable DMA memory, so it is
+    turned off, at least for now
+
+* blitter:
+  * Add property to clear screen to black in blitter sinks
+  * Add output-rotation property to videotransform base class
+
+* audio:
+  * Fix reference counting for caps
+  * Mark static codec caps as may be leaked
+    This gets rid of the false positive in the leak tracer
+
+==== version 0.12.3 (2016-11-13) ====
+
+* imxv4l2videosrc:
+  * Add checks for V4L XRGB555X and GStreamer NV61 pixel formats
+  * Add UYVY support and make it the new default
+    UYVY works better with IPU-based deinterlacing, since with I420,
+    deinterlaced frames may exhibit a green band at the bottom, which
+    is apparently an IPU bug related to the plane offsets.
+
+* vpu:
+  * Fix leak causd by missing GstVideoCodecState unref
+  * Release decoder context GCond during flush to fix potential deadlock
+  * Add memory tag to VPU framebuffer meta to avoid meta related crashes
+  * Add support for GRAY8 frames as a "fake grayscale mode"
+    Grayscale is actually encoded as I420, with the U and V planes
+    filled with 0x80 bytes. This feature also makes libimxvpuapi 0.10.3
+    the new minimum requirement.
+  * Remove 8-pixel alignment from width & height sinkcaps
+  * Framebuffer array: fix memory leak if we got out of memory
+
+* g2d:
+  * Always enable blending if the input frames have an alpha channel
+    G2D automatically makes use not only of global alpha, but also of
+    per-pixel alpha. Therefore, it makes sense to enable blending even
+    if global alpha is set to 255, as long as the input frames have an
+    alpha channel. Such blending is useful for composing a video frame
+    with some partially-transparent overlays for example (not to be
+    confused with hardware overlays though).
+
+* audio:
+  * Fix SIGFPE when restarting mp3 encoder
+
+* compositor:
+  * Clear output also if the input format has an alpha channel
+
+* misc:
+  * Update waf to 1.9.3 to fix compilation with Python 3.4+
+
+==== version 0.12.2 (2016-07-25) ====
+
+* imxv4l2videosrc:
+  * Stricter checks for video device capabilities
+  * Add support for more video formats like 8/16-bit grayscale
+
+* pxp: Fix incorrect return code which broke blitter with GStreamer 1.8
+
+* blitter:
+  * Improvements in error logging
+  * Fixes for RGBx framebuffer format detection
+  * Fix for subtle tearing problem by implementing triple buffering
+
+* audio:
+  * Replace objdump-based scan during build configuration
+    Codec filenames are instead moved to the C code; the libdir
+    path of the libfslaudiocodec.pc file is used to know where on
+    the target the files are placed
+  * Explicitely add the libfslaudiocodec.pc libdir to the MP3 encoder
+    Fixes build errors in buildroot
+  * Minor logging fixes
+
+* misc:
+  * Proper check for region copies in phys_mem_meta
+  * Add missing G_END_DECLS lines in headers
+
+==== version 0.12.1 (2016-04-06) ====
+
+* compositor: Rename ImxCompositor(Pad) to ImxVideoCompositor(Pad)
+
+* Add switches to wscript configuration to enable/disable plugins
+  Until now, all plugins were built (unless their dependencies were
+  missing). On some i.MX machines, some features are missing. For
+  example, the i.MX7 has no VPU. To ensure deterministic builds, it is
+  useful to selectively disable plugins in the build.
+
+* ipu+pxp: : Fix deadlocks and incorrect logging in case of init error
+  This was causing a freeze if for example one tries to use PxP elements
+  on an i.MX6 Dual/Quad
+
+* imxv4l2videosrc fixes and enhancements:
+  * fixes to interlacing support (incl. workarounds for analog TV input)
+  * remove format restriction in get_caps function
+    this removes the limitation on I420 formats
+  * simplified determination of fps (necessary due to driver limitations)
+
+* eglvivsink: wayland: Do not commit before buffers are swapped
+  This fixes eglSwapBuffer swaps with damaged frames
+
+* Documentation additions
+  Adds GPU memory leak notess to the FAQ
+
+* vpu: encoder: Expose motion estimation range as property
+
+* vpu: decoder: Drop output frame if its buffer cannot be allocated
+
+
+==== version 0.12.0 (2015-12-29) ====
+
+* vpu: Completely rewritten plugin code
+  The VPU elements are now based on libimxvpuapi instead of libfslvpuwrap.
+  This yields several benefits:
+  * Overall:
+    * Code is considerably clearer and easier to maintain
+    * libimxvpuapi logging fully integrated into the GStreamer logging
+      framework
+  * Encoder related:
+    * imxvpuenc_h264 inserts SPS/PPS data in front of I/IDR frames
+    * imxvpuenc_mjpeg's quality factor actually has an effect, and is
+      equivalent to the libjpeg's quality factor (it is used in exactly the
+      same way to scale the quantization matrix' coefficients)
+    * the encoder's output buffers no longer have to use DMA memory; they
+      use regular system memory instead
+  * Decoder related:
+    * new support in imxvpudec (referred to as "chroma interleaving") for
+      NV12, NV16, NV24 as output formats as an alternative to the I420,
+      Y42B, Y444 formats
+    * Removed all of the system frame number tracking code, since it is
+      unnecessary; Instead, the libimxvpuapi's context fields are used to
+      associate input/output frames with GstVideoCodecFrame system frame
+      numbers
+
+* vpu: Add missing buffer pool unref'ing, which lead to memory leaks
+  (similar to the leak fix for the IPU)
+
+* imxv4l2src fixes and enhancements:
+  * Add crop metadata to be able to let video transform and sink elements
+    downstream display a sub region of a captured frame
+  * Set the selected format instead of a format by default
+    This ensures that the element uses the width, height etc. of the format
+    that the device actually uses during operation
+  * Implement autofocus control based on GstPhotography, and make the
+    gstphotography library an imxv4l2videosrc dependency; if not found, it
+    will not be built
+  * Add missing break in switch-case block that lead to incorrect GLib
+    warnings
+  * Make sure the buffer array is freed *after* releasing all buffers
+    Previously, segmentation faults occasionally happened due to attempts
+    to access buffers that were freed before
+  * Use the framerate from the standard (PAL/NTSC/SECAM) and query the
+    actual fps the hardware uses
+
+* eglvivsink fixes and enhancements:
+  * Remove extra g_free() calls, which lead to runtime errors
+  * Remove GLESv2 VIVANTE link dependencies
+  * Add Android platform
+  * Manually retrieve VIV direct texture functions
+    With this and the link dependency elimination, this means that for
+    platforms except the framebuffer one, no Vivante specific headers and
+    libraries are needed anymore
+  * Fix blocking issue in the Wayland platform mainloop
+    wl_display_dispatch can block, so wl_display_dispatch_pending is used
+    instead. Since the platform code uses wl_display_read_events, the
+    wl_display_dispatch usage was anyway incorrect (according to the
+    Wayland client API documentation).
+
+* Improved and expanded documentation; there is now an FAQ page as well as
+  explanations for zerocopy and the blitter architecture as well as build
+  instructions for popular Linux embedded distributions
+
+* pxp: NV16 *is* supported after all (it was actually a bug in GStreamer
+  pre-1.5.91)
+  NOTE: this does not break compatibility with GStreamer versions older
+  than 1.5.91
+
+* compositor: Update backported aggregator code to GStreamer 1.6
+
+* blitter fixes and enhancements:
+  * Error handling improvements
+  * Add missing buffer pool unref'ing, which lead to memory leaks
+  * Add missing compositor dependency to blitter base
+
+* uniaudio fixes and enhancements:
+  * Only build the uniaudio plugin if at least one codec was found during
+    configuration
+  * Disable plugin if the gstaudio library is not available
+  * Add AAC profile field to the sink caps with GStreamer >= 1.4.4
+    The uniaudio AAC decoder only supports LC (low-complexity) AAC streams.
+    GStreamer's aacparse has a "profile" field in the caps since version
+    1.4.4. With this field, it is possible to limit the uniaudio AAC
+    decoder to LC. This way, GStreamer can auto-select a different AAC
+    decoder for streams that use other a profile other than the LC one.
+
+* Fix wscripts for better Android support
+
+* ipu: Increase fill frame width from 8 to 64 pixels to make IPU fill
+  operations work with pre-3.14 Freescale kernels
+
+* g2d: Use padding pixels when setting surface parameters
+  This fixes G2D failures with frame sizes that aren't aligned
+
+* Fix installation paths for the common, blitter, and compositor libraries
+
+
+==== version 0.11.1 (2015-07-29) ====
+
+* vpu: decoder: Keep track of unfinished gstvideo frames
+  This was causing pipeline errors and memory leaks with GStreamer 1.4
+
+* blitter fixes and enhancements:
+  * Fix vsync setup in video sink base class
+  * Cropping reintroduced in video sinks and transform elements
+  * videotransform: offset, offset-end, and duration of input buffers are now
+    copied
+
+* ipu: All pages are now cleared when page flipping is used (needed for vsync),
+  not just the first one
+
+* compositor: Added support for cropping input streams
+
+* imxv4l2src fixes and enhancements:
+  * Use GLib gchar instead of char
+  * Add support for imxv4l2://<devicename> URIs via the GstUriHandler
+  * Add special case to support YUYV data (GStreamer expects YUY2 in its place)
+
+
+==== version 0.11.0 (2015-07-23) ====
+
+* new common codebase for rectangular regions and video canvases
+
+* new blitter-based video sink with full support for vsync to eliminate tearing
+
+* complete rewrite of blitter base code to better support aspect ratio correction,
+  rotation, empty region filling, and compositing
+
+* new compositor elements, API compatible with the upstream GStreamer compositor
+  These new elements allow for combining N input video streams into one output
+  stream with alpha blending, scaling, rotation, color space conversions etc.
+  and hardware accelerated via G2D, IPU, PxP
+
+* vpu: decoder: Memory leaks fixed
+  Decoder is now drained when stopping
+  Fixed incorrect gst_allocator_free() call
+  GstImxPhysMemory slices weren't being freed properly
+  VPU allocator instances are now instantiated per-decoder
+
+* vpu: encoder: Bitrate can now be set on the fly
+
+* eglvivsink: In Wayland, window x/y coordinates are now supported
+
+* several v4l2src fixes:
+  Removed experimental and deprectated WITH_CHIP_IDENTIFICATION ioctl
+  Use pixelformat reported by the driver instead of hardcoding I420
+  The format fourcc is now read properly (not just as a string)
+  Call VIDIOC_QUERYBUF twice to get a physical address (important for zerocopy)
+  Add interlace-mode to src caps to allow for deinterlacing camera feeds
+  If possible, the actual frame rate is retrieved
+
+
+==== version 0.10.2 (2015-06-02) ====
+
+* uniaudio: Create correct config header even if no codecs were found
+  This prevents compilation errors in this case
+
+* g2d/ipu/pxp blitter sink: Respect aspect ratio also in 90/270 degree rotations
+  For these rotations, width and height have to be swapped prior to calculating
+  the aspect-corrected frame
+
+* v4l2src: Call the buffer pool baseclass stop() function
+  This fixes segmentation faults during shutdown
+
+* audio: new MP3 encoder element using the libfslcodec MP3 encoder
+  This encoder is suitable for real-time encoding, since it encodes much faster
+  than LAME for example (though not reaching LAME's compression efficiency)
+
+* pxp: Remove broken/unsupported formats
+  PxP unfortunately does not have consistent format support; the formats that
+  actually work properly had to be determined empirically
+
+* eglvivsink: Fix double mutex unlock
+  Double unlocks occurred in X11 builds with gst-play and gtk-play
+
+* Cleanup phys mem meta naming
+
+==== version 0.10.1 (2015-02-12) ====
+
+* uniaudio: fix memory leak in decoder
+  Decoded buffers weren't freed properly, leading to rapidly
+  increasing memory leaks
+
+* eglvivsink: fix deadlock
+  This deadlock occurred in the NULL->READY state change if said
+  state change failed
+
+* vpu: encoder: pass input video codec state to derived classes
+  This is interesting for the MJPEG encoder for example, to properly
+  choose the configured color format
+
+* vpu: decoder: handle missing width and height values in caps
+  Typically, containers do have this information and set it in the caps,
+  but there are corner cases where this isn't true. Before, these caused
+  assertions inside the decoder. Now they are handled properly. (The
+  values detected by the VPU are used then.)
+
+* fixed video info size bug in phys mem buffer pool
+  This bug caused a mismatch between the configured size and the actual
+  size of video buffers. This lead to excessive physmem free calls
+  in the buffer pool, which in turn means that physical memory was
+  constantly being allocated and freed.
+
+* fixes to base blitter:
+  * don't draw anything if the video region is invisible
+  * set output and video region visibility to FULL by default, fixing
+    some cases of "green screen" output (which means nothing was being
+    blitted)
+
+==== version 0.10.0 (2014-12-27) ====
+
+* new codebase for 2D blitter based video sinks and transform elements
+  The new code introduces the GstImxBaseBlitter base class, which is the
+  foundation for blitter-based elements. This class, along with the
+  GstImxBlitterVideoTransform and GstImxBlitterVideoSink base classes,
+  take care of most of the work for blitter-based operations. Derived
+  classes mostly just implement their blitter specific parts on top.
+  This makes it easy to support G2D, IPU, and PxP based operations.
+  The GstImxBlitterVideoSink also preserves the aspect ratio, and
+  areas left empty by the correction are filled with black pixels.
+
+* new G2D elements: imxg2dvideosink imxg2dvideotransform
+  G2D is an API on top of the Vivante GPU's Pixel Engine. Starting with
+  this release, imxg2dvideosink is considered the video sink of choice,
+  along with imxeglvivsink. G2D is generally easier to operate than IPU.
+
+* new PxP elements: imxpxpvideosink imxpxpvideotransform
+  The PxP system is particularly useful with cameras, since it is the
+  only one which can convert from the Y42B colorspace to another one,
+  and Y42B is often used by USB webcams.
+
+* ipu: rewrite code from scratch to be based on the blitter base classes
+  Note that imxipusink has been renamed to imxipuvideosink. Also, thanks
+  to the GstImxBlitterVideoSink, the IPU sink now preserves the aspect ratio.
+
+* ipu: fix memory protection bits in mmap() calls
+
+* phys mem buffer pool now uses a default horizontal alignment of 16 instead of 8
+  This alignment works better with all blitters
+
+* eglvivsink: fix deadlock in set_caps() function
+  The deadlock appeared in some situations when the eglvivsink was embedded
+  inside another window
+
+* vpu: decoder: add interlace information to output buffers
+
+* vpu: encoder:
+  * fix gst_buffer that was not set to NULL after unref
+  * configure bitrate and intra refresh period in set_format() call
+  * fix get_property() requests for slice size and intra refresh period
+  * IDR interval was sometimes unsetting the nForceIPicture flag even if it was
+    set before (for example, because the frame is a sync point)
+
+* new elements for audio decoding based on Freescale's unified audio (UniAudio) architecture
+  These elements depend on the libfslcodec library. Tested with libfslcodec 4.0.1.
+  Supported formats:
+  * MPEG-1 layer 1/2/3
+  * Ogg Vorbis
+  * AAC Low Complexity (LC)
+  * WMA (up to WMA version 10) (*)
+  * AMR-Narrowband
+  * AMR-Wideband
+
+  (*) codec is not included in libfslcodec by default; to obtain the specific
+  codec, a license for this format must be presented to your Freescale FAE
+
+* preliminary support for Android builds
+  Android requires some changes in the building process. Most importantly, the
+  plugins and common lib must be built as static libraries.
+
+==== version 0.9.9 (2014-09-21) ====
+
+* ipu, vpu, v4l2src: use reference counting for resources
+  This ensures that resources are freed only after when every entity
+  that uses them has been shut down
+
+  ipu: use a global FD and increase/decrease refcount for each blitter
+  instance and for every (de)allocation
+
+  vpu: increment/decrement refcount not only when creating/shutting down
+  decoder instances, but also for every (de)allocation
+
+  v4l2src: instead of using a raw FD, use a reference-counted FD object
+
+* ipu: use a global FD instead of per-blitter FDs
+  This circumvents bugs in the IPU kernel driver which are triggered
+  when multiple IPU FDs are open at the same time
+
+* introduce a proper physical address type and a printf conversion specifier
+
+* remove cpu address from GstImxPhysMemory and add an "internal" pointer
+  as an optional, internal, allocator-specific extra parameter
+  (for example, a handle to an internal DMA buffer object)
+
+* rplace obsolete "padding" member in phys mem meta with better defined
+  x_padding/y_padding ones
+  This avoids having to do calculations like "padding / stride" to get to
+  the number of additional rows, for example
+
+* use a reference counter for mapping physical memory
+  Necessary because the same physical memory might get mapped multiple times
+  (commonly done by gst_video_frame_map() and multi-planar formats like I420)
+  until now, it was mapped the first time, and subsequent mapping calls were
+  just ignored, but a reference counter is much cleaner and safer
+
+* ipu: fix kernel version detection and include paths in wscript
+  Now, the <3.5.0 kernel version check works properly
+
+* eglvivsink: remove RGB from the list of supported formats
+  Vivante direct textures support various RGBA/RGBx formats, but not RGB
+
+* Miscelleanous:
+  * Logging improvements
+  * Added notes to functions that return floating references
+  * Removed obsolete todo file
