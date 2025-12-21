@@ -216,8 +216,10 @@ gboolean gst_imx_vpu_enc_h264_set_open_params(GstImxVpuEnc *imx_vpu_enc, ImxVpuA
 
 	GST_INFO_OBJECT(imx_vpu_enc, "access unit delimiters enabled: %d", h264_params->enable_access_unit_delimiters);
 
-	full_video_range = (GST_VIDEO_INFO_COLORIMETRY(&(imx_vpu_enc->in_video_info)).range == GST_VIDEO_COLOR_RANGE_0_255);
-	open_params->flags |= (full_video_range ? IMX_VPU_API_ENC_H264_OPEN_PARAMS_FLAG_FULL_VIDEO_RANGE : 0);
+        full_video_range = (GST_VIDEO_INFO_COLORIMETRY(&(imx_vpu_enc->in_video_info)).range == GST_VIDEO_COLOR_RANGE_0_255);
+#ifdef IMX_VPU_API_ENC_H264_OPEN_PARAMS_FLAG_FULL_VIDEO_RANGE
+        open_params->flags |= (full_video_range ? IMX_VPU_API_ENC_H264_OPEN_PARAMS_FLAG_FULL_VIDEO_RANGE : 0);
+#endif
 
 
 finish:
