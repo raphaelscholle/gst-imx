@@ -1,0 +1,239 @@
+/* GStreamer IMX Video 2D Device Abstract
+ * Copyright (c) 2014-2016, Freescale Semiconductor, Inc. All rights reserved.
+ * Copyright 2018 NXP
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Library General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Library General Public License for more details.
+ *
+ * You should have received a copy of the GNU Library General Public
+ * License along with this library; if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ * Boston, MA 02111-1307, USA.
+ */
+
+#ifndef __IMX_VIDEO_2D_DEVICE_H__
+#define __IMX_VIDEO_2D_DEVICE_H__
+
+#include <gst/video/video.h>
+#include "gstimxcommon.h"
+#include "gstimx.h"
+#include "imx_2d_device_allocator.h"
+
+#define ALIGNMENT (16)
+#define ISALIGNED(a, b) (!(a & (b-1)))
+#define ALIGNTO(a, b) ((a + (b-1)) & (~(b-1)))
+#define SIZE_ALIGN(size, align)    ((size+align-1)/(align)*(align))
+
+typedef enum {
+  IMX_2D_DEVICE_G2D,
+  IMX_2D_DEVICE_IPU,
+  IMX_2D_DEVICE_PXP,
+  IMX_2D_DEVICE_OCL,
+  IMX_2D_DEVICE_GLES2,
+} Imx2DDeviceType;
+
+typedef enum {
+  IMX_2D_DEVICE_CAP_SCALE        = 0x01,
+  IMX_2D_DEVICE_CAP_CSC          = 0x02,
+  IMX_2D_DEVICE_CAP_ROTATE       = 0x04,
+  IMX_2D_DEVICE_CAP_DEINTERLACE  = 0x08,
+  IMX_2D_DEVICE_CAP_ALPHA        = 0x10,
+  IMX_2D_DEVICE_CAP_BLEND        = 0x20,
+  IMX_2D_DEVICE_CAP_OVERLAY      = 0x40,
+  IMX_2D_DEVICE_CAP_WARP         = 0x80,
+  IMX_2D_DEVICE_CAP_ALL          = 0x1F
+} Imx2DDeviceCap;
+
+typedef enum {
+  IMX_2D_TILE_NULL,
+  IMX_2D_TILE_AMHPION
+} Imx2DTileType;
+
+typedef enum {
+  IMX_2D_ROTATION_0,
+  IMX_2D_ROTATION_90,
+  IMX_2D_ROTATION_180,
+  IMX_2D_ROTATION_270,
+  IMX_2D_ROTATION_HFLIP,
+  IMX_2D_ROTATION_VFLIP
+} Imx2DRotationMode;
+
+typedef enum {
+  IMX_2D_DEINTERLACE_NONE,
+  IMX_2D_DEINTERLACE_LOW_MOTION,
+  IMX_2D_DEINTERLACE_MID_MOTION,
+  IMX_2D_DEINTERLACE_HIGH_MOTION
+} Imx2DDeinterlaceMode;
+
+typedef enum {
+  IMX_2D_INTERLACE_PROGRESSIVE,
+  IMX_2D_INTERLACE_INTERLEAVED,
+  IMX_2D_INTERLACE_FIELDS,
+  IMX_2D_INTERLACE_MIXED,
+} Imx2DInterlaceType;
+
+typedef enum {
+  IMX_2D_COLOR_RANGE_DEFAULT = 0,
+  IMX_2D_COLOR_RANGE_FULL,
+  IMX_2D_COLOR_RANGE_LIMITED
+} Imx2DColorRangeType;
+
+typedef enum {
+  IMX_2D_COLOR_MATRIX_DEFAULT = 0,
+  IMX_2D_COLOR_MATRIX_BT601_625,
+  IMX_2D_COLOR_MATRIX_BT601_525,
+  IMX_2D_COLOR_MATRIX_BT709,
+  IMX_2D_COLOR_MATRIX_BT2020
+} Imx2DColorMatrixType;
+
+typedef enum {
+  IMX_2D_WARP_MAP_PNT = 0,
+  IMX_2D_WARP_MAP_DPNT,
+  IMX_2D_WARP_MAP_DDPNT,
+  IMX_2D_WARP_MAP_NULL
+} Imx2DWarpMap;
+
+typedef enum {
+  IMX_2D_WARP_UNDEFINE = 0,
+  IMX_2D_WARP_PNT_32BPP,
+  IMX_2D_WARP_DPNT_32BPP,
+  IMX_2D_WARP_DPNT_16BPP,
+  IMX_2D_WARP_DPNT_8BPP,
+  IMX_2D_WARP_DDPNT_32BPP,
+  IMX_2D_WARP_DDPNT_16BPP,
+  IMX_2D_WARP_DDPNT_8BPP,
+  IMX_2D_WARP_DDPNT_4BPP,
+} Imx2DWarpAlgorithmsType;
+
+typedef struct {
+  Imx2DColorRangeType range;
+  Imx2DColorMatrixType matrix;
+} Imx2DColorimetry;
+
+typedef struct {
+  GstVideoFormat in_fmt;
+  GstVideoFormat out_fmt;
+  gint  complexity;
+  gint  loss;
+} Imx2DTransformMap;
+
+typedef struct _Imx2DCrop {
+  gint x;
+  gint y;
+  guint w;
+  guint h;
+} Imx2DCrop;
+
+typedef struct _Imx2DVideoInfo {
+  GstVideoFormat fmt;
+  guint w;
+  guint h;
+  guint stride;
+  Imx2DTileType tile_type;
+  Imx2DColorimetry colorimetry;
+  Imx2DInterlaceType interlace_type;
+} Imx2DVideoInfo;
+
+typedef struct _Imx2DVidoWarpArbitrary {
+  guint arb_start_x;
+  guint arb_start_y;
+  guint arb_delta_xx;
+  guint arb_delta_xy;
+  guint arb_delta_yx;
+  guint arb_delta_yy;
+} Imx2DVidoWarpArbitrary;
+
+typedef struct _Imx2DVideoWarp {
+  gboolean enable;
+  Imx2DWarpMap map_format;
+  gint width;
+  gint height;
+  gint bpp;
+  gchar *filename;
+  PhyMemBlock coordinates_mem;
+  gsize coordinates_size;
+  Imx2DVidoWarpArbitrary arb_info;
+  guint arb_num;
+  GstStructure *extra_controls;
+} Imx2DVideoWarp;
+
+typedef struct _Imx2DAlignInfo {
+  guint width_align;
+  guint height_align;
+  guint size_align;
+  gboolean is_output;
+  gboolean is_apply;
+} Imx2DAlignInfo;
+
+typedef struct _Imx2DFrame {
+  PhyMemBlock           *mem;
+  gint                  fd[4];
+  Imx2DVideoInfo        info;
+  Imx2DCrop             crop;
+  Imx2DRotationMode     rotate;
+  Imx2DInterlaceType    interlace_type;
+  gint                  alpha;
+  GstBuffer             *outbuf;
+} Imx2DFrame;
+
+typedef struct _Imx2DDevice  Imx2DDevice;
+struct _Imx2DDevice {
+  Imx2DDeviceType  device_type;
+
+  /* point to concrete device object */
+  gpointer priv;
+
+  /* device interfaces */
+  gint (*open)        (Imx2DDevice* device);
+  gint (*close)       (Imx2DDevice* device);
+  gint (*alloc_mem)   (Imx2DDevice* device, PhyMemBlock *memblk);
+  gint (*free_mem)    (Imx2DDevice* device, PhyMemBlock *memblk);
+  gint (*copy_mem)    (Imx2DDevice* device, PhyMemBlock *dst_mem,
+                       PhyMemBlock *src_mem, guint offset, guint size);
+  gint (*frame_copy)  (Imx2DDevice* device, PhyMemBlock *from, PhyMemBlock *to);
+  gint (*set_deinterlace) (Imx2DDevice* device, Imx2DDeinterlaceMode mode);
+  gint (*set_rotate)      (Imx2DDevice* device, Imx2DRotationMode mode);
+  gint (*config_input)    (Imx2DDevice* device, Imx2DVideoInfo* in_info);
+  gint (*config_output)   (Imx2DDevice* device, Imx2DVideoInfo* out_info);
+  gint (*convert)   (Imx2DDevice* device, Imx2DFrame *dst, Imx2DFrame *src);
+  gint (*blend)        (Imx2DDevice* device, Imx2DFrame *dst, Imx2DFrame *src);
+  gint (*blend_finish) (Imx2DDevice* device);
+  gint (*fill)         (Imx2DDevice* device, Imx2DFrame *dst, guint RGBA8888);
+
+  gint                 (*get_capabilities)        (Imx2DDevice* device);
+  GList*               (*get_supported_in_fmts)   (Imx2DDevice* device);
+  GList*               (*get_supported_out_fmts)  (Imx2DDevice* device);
+  Imx2DRotationMode    (*get_rotate)              (Imx2DDevice* device);
+  Imx2DDeinterlaceMode (*get_deinterlace)         (Imx2DDevice* device);
+  gboolean (*check_conversion) (Imx2DDevice *device, GstCaps *input_caps, GstCaps *output_caps);
+  gboolean (*config_warp_info) (Imx2DDevice* device, Imx2DVideoWarp *video_warp);
+  gboolean (*get_alignment) (Imx2DDevice* device, GstVideoInfo *in_info, GstVideoInfo *out_info, Imx2DAlignInfo *align_info);
+  GList*               (*get_supported_fmts_of_capability)   (Imx2DDevice* device, Imx2DDeviceCap cap);
+};
+
+typedef struct _Imx2DDeviceInfo {
+  gchar *name;
+  Imx2DDeviceType  device_type;
+  Imx2DDevice*  (*create)   (Imx2DDeviceType  device_type);
+  gint          (*destroy)  (Imx2DDevice* dev);
+  gboolean      (*is_exist) (void);
+} Imx2DDeviceInfo;
+
+const Imx2DDeviceInfo * imx_get_2d_devices(void);
+Imx2DDevice * imx_2d_device_create(Imx2DDeviceType  device_type);
+gint imx_2d_device_destroy(Imx2DDevice *device);
+gboolean imx_2d_device_video_info_from_caps (GstCaps * caps, Imx2DVideoInfo *info);
+gboolean imx_2d_device_read_warp_coordinates_file (Imx2DDevice *device,
+    const char* file_name, Imx2DVideoWarp *video_warp);
+void imx_2d_device_set_warp_controls (const GstStructure * config,
+    Imx2DVideoWarp *video_warp);
+void imx_2d_device_fill_background(Imx2DFrame *dst, guint RGBA8888);
+
+#endif /* __IMX_2D_DEVICE_H__ */
