@@ -29,6 +29,8 @@ GST_DEBUG_CATEGORY_STATIC(imx_vpu_enc_h265_debug);
 struct _GstImxVpuEncH265
 {
         GstImxVpuEnc parent;
+
+        gboolean enable_aud;
 };
 
 
@@ -45,13 +47,32 @@ gboolean gst_imx_vpu_enc_h265_set_open_params(GstImxVpuEnc *imx_vpu_enc, ImxVpuA
 GstCaps* gst_imx_vpu_enc_h265_get_output_caps(GstImxVpuEnc *imx_vpu_enc, ImxVpuApiEncStreamInfo const *stream_info);
 
 
+enum
+{
+        PROP_0 = GST_IMX_VPU_ENC_BASE_PROP_VALUE,
+        PROP_ENABLE_AUD
+};
+
+
+#define DEFAULT_ENABLE_AUD TRUE
+
+
+static void gst_imx_vpu_enc_h265_set_encoder_property(GObject *object, guint prop_id, GValue const *value, GParamSpec *pspec);
+static void gst_imx_vpu_enc_h265_get_encoder_property(GObject *object, guint prop_id, GValue *value, GParamSpec *pspec);
+
+
 static void gst_imx_vpu_enc_h265_class_init(GstImxVpuEncH265Class *klass)
 {
         GstImxVpuEncClass *imx_vpu_enc_class;
+        GObjectClass *object_class;
 
         GST_DEBUG_CATEGORY_INIT(imx_vpu_enc_h265_debug, "imxvpuenc_h265", 0, "NXP i.MX VPU H265 video encoder");
 
+        object_class = G_OBJECT_CLASS(klass);
         imx_vpu_enc_class = GST_IMX_VPU_ENC_CLASS(klass);
+
+        object_class->set_property = gst_imx_vpu_enc_h265_set_encoder_property;
+        object_class->get_property = gst_imx_vpu_enc_h265_get_encoder_property;
 
         imx_vpu_enc_class->set_open_params = GST_DEBUG_FUNCPTR(gst_imx_vpu_enc_h265_set_open_params);
         imx_vpu_enc_class->get_output_caps = GST_DEBUG_FUNCPTR(gst_imx_vpu_enc_h265_get_output_caps);
@@ -59,12 +80,61 @@ static void gst_imx_vpu_enc_h265_class_init(GstImxVpuEncH265Class *klass)
         gst_imx_vpu_enc_common_class_init(imx_vpu_enc_class, IMX_VPU_API_COMPRESSION_FORMAT_H265, TRUE, TRUE, TRUE, TRUE, TRUE);
 
         imx_vpu_enc_class->use_idr_frame_type_for_keyframes = TRUE;
+
+        g_object_class_install_property(
+                object_class,
+                PROP_ENABLE_AUD,
+                g_param_spec_boolean(
+                        "enable-aud",
+                        "Enable access unit delimiters",
+                        "Enable the generation of access unit delimiters in the encoded output",
+                        DEFAULT_ENABLE_AUD,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS
+                )
+        );
 }
 
 
 static void gst_imx_vpu_enc_h265_init(GstImxVpuEncH265 *imx_vpu_enc_h265)
 {
         gst_imx_vpu_enc_common_init(GST_IMX_VPU_ENC_CAST(imx_vpu_enc_h265));
+        imx_vpu_enc_h265->enable_aud = DEFAULT_ENABLE_AUD;
+}
+
+
+static void gst_imx_vpu_enc_h265_set_encoder_property(GObject *object, guint prop_id, GValue const *value, GParamSpec *pspec)
+{
+        GstImxVpuEncH265 *imx_vpu_enc_h265 = GST_IMX_VPU_ENC_H265(object);
+
+        switch (prop_id)
+        {
+                case PROP_ENABLE_AUD:
+                        GST_OBJECT_LOCK(imx_vpu_enc_h265);
+                        imx_vpu_enc_h265->enable_aud = g_value_get_boolean(value);
+                        GST_OBJECT_UNLOCK(imx_vpu_enc_h265);
+                        break;
+
+                default:
+                        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+        }
+}
+
+
+static void gst_imx_vpu_enc_h265_get_encoder_property(GObject *object, guint prop_id, GValue *value, GParamSpec *pspec)
+{
+        GstImxVpuEncH265 *imx_vpu_enc_h265 = GST_IMX_VPU_ENC_H265(object);
+
+        switch (prop_id)
+        {
+                case PROP_ENABLE_AUD:
+                        GST_OBJECT_LOCK(imx_vpu_enc_h265);
+                        g_value_set_boolean(value, imx_vpu_enc_h265->enable_aud);
+                        GST_OBJECT_UNLOCK(imx_vpu_enc_h265);
+                        break;
+
+                default:
+                        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+        }
 }
 
 
@@ -74,6 +144,7 @@ gboolean gst_imx_vpu_enc_h265_set_open_params(GstImxVpuEnc *imx_vpu_enc, ImxVpuA
         GstStructure *s;
         gchar const *str;
         GstCaps *allowed_srccaps;
+        ImxVpuApiH265SupportDetails const *h265_support_details;
         ImxVpuApiEncH265OpenParams *h265_params = &(open_params->format_specific_open_params.h265_open_params);
 
         allowed_srccaps = gst_pad_get_allowed_caps(GST_VIDEO_DECODER_SRC_PAD(imx_vpu_enc));
@@ -108,6 +179,8 @@ gboolean gst_imx_vpu_enc_h265_set_open_params(GstImxVpuEnc *imx_vpu_enc, ImxVpuA
                 }
         }
 
+        h265_support_details = (ImxVpuApiH265SupportDetails const *)imx_vpu_api_enc_get_compression_format_support_details(IMX_VPU_API_COMPRESSION_FORMAT_H265);
+
         str = gst_imx_vpu_get_string_from_structure_field(s, "level");
         if (str != NULL)
         {
@@ -131,6 +204,30 @@ gboolean gst_imx_vpu_enc_h265_set_open_params(GstImxVpuEnc *imx_vpu_enc, ImxVpuA
                         goto finish;
                 }
         }
+        else if (h265_support_details != NULL)
+        {
+                ImxVpuApiH265Level default_level;
+
+                /*
+                 * If no level was negotiated, fall back to the maximum level
+                 * supported for the selected profile. Without this, the encoder
+                 * reports an unknown/unsupported level and refuses to start.
+                 */
+                default_level = (h265_params->profile == IMX_VPU_API_H265_PROFILE_MAIN10)
+                        ? h265_support_details->max_main10_profile_level
+                        : h265_support_details->max_main_profile_level;
+
+                if (default_level != IMX_VPU_API_H265_LEVEL_UNDEFINED)
+                        h265_params->level = default_level;
+                else
+                        GST_WARNING_OBJECT(imx_vpu_enc, "h.265 level not negotiated and no supported level reported; keeping default");
+        }
+
+        GST_OBJECT_LOCK(imx_vpu_enc);
+        h265_params->enable_access_unit_delimiters = GST_IMX_VPU_ENC_H265_CAST(imx_vpu_enc)->enable_aud;
+        GST_OBJECT_UNLOCK(imx_vpu_enc);
+
+        GST_INFO_OBJECT(imx_vpu_enc, "access unit delimiters enabled: %d", h265_params->enable_access_unit_delimiters);
 
 finish:
         if (allowed_srccaps != NULL)
