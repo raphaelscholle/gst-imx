@@ -178,7 +178,15 @@ GstFlowReturn gst_imx_video_uploader_perform(GstImxVideoUploader *uploader, GstB
 	input_buffer_frame_mapped = FALSE;
 	uploaded_buffer_frame_mapped = FALSE;
 
-	if (video_meta != NULL)
+	if (gst_buffer_n_memory(input_buffer) > 1)
+	{
+		/* Multi-memory frames (for example NV12M) need repacking into one DMA buffer,
+		 * otherwise downstream users that consume only the first memory block will see
+		 * broken chroma data. */
+		needs_frame_copy = TRUE;
+		GST_LOG_OBJECT(uploader, "input buffer has %u memory blocks; forcing GstVideoFrame based frame copy", gst_buffer_n_memory(input_buffer));
+	}
+	else if (video_meta != NULL)
 	{
 		/* We need to check if the stride and plane offset values in the videometa
 		 * are already aligned. If not, we have to perform a frame copy. */

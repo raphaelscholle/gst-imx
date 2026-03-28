@@ -24,7 +24,7 @@
 #include <gst/video/gstvideoencoder.h>
 #include <imxvpuapi2/imxvpuapi2.h>
 #include "gstimxvpucommon.h"
-#include "gst/imx/common/gstimxdmabufferuploader.h"
+#include "gst/imx/video/gstimxvideouploader.h"
 
 
 G_BEGIN_DECLS
@@ -77,7 +77,7 @@ struct _GstImxVpuEnc
 
 	/* Used for uploading incoming buffers into ImxDmaBuffer-backed
 	 * GstMemory that we can use with the VPU encoder. */
-	GstImxDmaBufferUploader *uploader;
+	GstImxVideoUploader *uploader;
 	/* The uploader produces new gstbuffers with the uploaded variants
 	 * of input buffers. These are stored here, and get removed once the
 	 * corresponding input frames got fully processed by the encoder.

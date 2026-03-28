@@ -326,8 +326,13 @@ static gboolean gst_imx_vpu_enc_start(GstVideoEncoder *encoder)
 	alloc_params.align = stream_buffer_alignment - 1;
 
 	imx_vpu_enc->default_dma_buf_allocator = gst_imx_allocator_new();
-
-	imx_vpu_enc->uploader = gst_imx_dma_buffer_uploader_new(imx_vpu_enc->default_dma_buf_allocator);
+	imx_vpu_enc->uploader = gst_imx_video_uploader_new(imx_vpu_enc->default_dma_buf_allocator, 1, 1);
+	if (G_UNLIKELY(imx_vpu_enc->uploader == NULL))
+	{
+		GST_ELEMENT_ERROR(imx_vpu_enc, RESOURCE, FAILED, ("could not create video uploader"), (NULL));
+		ret = FALSE;
+		goto finish;
+	}
 
 	if (stream_buffer_size > 0)
 	{
@@ -443,6 +448,12 @@ static gboolean gst_imx_vpu_enc_set_format(GstVideoEncoder *encoder, GstVideoCod
 	/* Begin filling the open_params. */
 
 	imx_vpu_enc->in_video_info = state->info;
+	if (!gst_imx_video_uploader_set_input_video_info(imx_vpu_enc->uploader, &(imx_vpu_enc->in_video_info)))
+	{
+		GST_ELEMENT_ERROR(imx_vpu_enc, RESOURCE, FAILED, ("could not configure video uploader with input format"), (NULL));
+		ret = FALSE;
+		goto finish;
+	}
 
 	video_format = GST_VIDEO_INFO_FORMAT(&(state->info));
 	if (!gst_imx_vpu_color_format_from_gstvidfmt(&color_format, video_format))
@@ -614,7 +625,7 @@ static GstFlowReturn gst_imx_vpu_enc_handle_frame(GstVideoEncoder *encoder, GstV
 
 		GST_LOG_OBJECT(imx_vpu_enc, "about to prepare and queue frame with number #%" G_GUINT32_FORMAT " for encoding", cur_frame->system_frame_number);
 
-		flow_ret = gst_imx_dma_buffer_uploader_perform(imx_vpu_enc->uploader, cur_frame->input_buffer, &uploaded_input_buffer);
+		flow_ret = gst_imx_video_uploader_perform(imx_vpu_enc->uploader, cur_frame->input_buffer, &uploaded_input_buffer);
 		if (G_UNLIKELY(flow_ret != GST_FLOW_OK))
 			goto finish;
 
